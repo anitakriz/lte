@@ -24,8 +24,6 @@ The repository is organized as follows:
    - The dataset is generated using `dataset.py` and visualized in `dataset.ipynb`.
    - High-dimensional image data represents longitudinal trajectories with ground-truth ODE-governed outcomes, including both true and counterfactual trajectories.
 
-## Synthetic Data Generation
-
 ![Framework Diagram](images/dataset.png)
 
 2. **Benchmark Model**: 
