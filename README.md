@@ -24,11 +24,14 @@ The repository is organized as follows:
    - The dataset is generated using `dataset.py` and visualized in `dataset.ipynb`.
    - High-dimensional image data represents longitudinal trajectories with ground-truth ODE-governed outcomes, including both true and counterfactual trajectories.
 
-![Framework Diagram](images/dataset.png)
+![Synthetic Dataset Trajectories](images/dataset.png)
 
 2. **Benchmark Model**: 
    - Implemented in `autoencoder.py`.
    - Combines a fully connected autoencoder with SINDy to discover ODEs in a latent space, applied to longitudinal treatment effect estimation.
+
+![Benchmark Architecture](images/benchmark.png)
+![Benchmark Results](images/benchmark_results.png)
 
 3. **Proposed Method**:
    - Implemented in `vae.py`.
