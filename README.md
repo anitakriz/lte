@@ -5,13 +5,14 @@ This repository contains the implementation of our proposed framework for interp
 ## Repository Structure
 The repository is organized as follows:
 
-├── autoencoder.py # Benchmark autoencoder with SINDy for ODE discovery 
-├── vae.py # Proposed VAE-NCM model with SINDy 
-├── dataset.py # Synthetic dataset generation 
-├── train.py # Training script for both models 
-├── metrics.py # Evaluation metrics for model performance
-├── dataset.ipynb # Notebook for trajectory and dataset visualization 
-├── requirements.txt # Python dependencies ├── README.md # Project overview
+├── autoencoder.py      # Benchmark autoencoder with SINDy for ODE discovery
+├── vae.py              # Proposed VAE-NCM model with SINDy
+├── dataset.py          # Synthetic dataset generation
+├── train.py            # Training script for both models
+├── metrics.py          # Evaluation metrics for model performance
+├── dataset.ipynb       # Notebook for trajectory and dataset visualization
+├── requirements.txt    # Python dependencies
+├── README.md           # Project overview
 
 
 ## Features
