@@ -2,6 +2,10 @@
 
 This repository contains the implementation of our proposed framework for interpretable treatment effect estimation and counterfactual generation. The approach integrates Neural Causal Models (NCMs) with Sparse Identification of Nonlinear Dynamics (SINDy) for ODE discovery in a causally-constrained latent space, enabling the analysis of high-dimensional longitudinal data.
 
+## Diagram of the Proposed
+
+![Framework Diagram](images/diagram.png)
+
 ## Repository Structure
 The repository is organized as follows:
 ```plaintext
@@ -19,6 +23,10 @@ The repository is organized as follows:
 1. **Synthetic Dataset**: 
    - The dataset is generated using `dataset.py` and visualized in `dataset.ipynb`.
    - High-dimensional image data represents longitudinal trajectories with ground-truth ODE-governed outcomes, including both true and counterfactual trajectories.
+
+## Synthetic Data Generation
+
+![Framework Diagram](images/dataset.png)
 
 2. **Benchmark Model**: 
    - Implemented in `autoencoder.py`.
