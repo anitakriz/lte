@@ -11,7 +11,7 @@ from dataset import  MNIST_UNTREATED_Dataset, MNIST_TE_Dataset, PendulumDataset,
 from hps import parse_args
 from vae import VAE
 from autoencoder import Autoencoder
-from autoencoder_conv import ConvAutoencoder
+# from autoencoder_conv import ConvAutoencoder
 from torch.utils.data import DataLoader
 from metrics import compute_metrics
 from utils import sample_images, save_dynamics, predict_attributes, plot_recon
