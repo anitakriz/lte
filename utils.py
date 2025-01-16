@@ -4,6 +4,48 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import os 
 from metrics import compute_metrics
+from vae import VAE
+from autoencoder import Autoencoder
+
+def plot_recon(args, model, x):
+    """Function to plot true vs predicted (x_hat) for the validation set."""
+    # Ensure the plot directory exists
+    plot_dir = os.path.join(args.save_exp, "plots/recon")
+    os.makedirs(plot_dir, exist_ok=True)
+
+    # Select the first 20 samples from x and x_hat
+    num_samples = 10
+    x_samples = x[:num_samples]
+    x_hat_samples = model.get_recon(x_samples)
+
+    # Create a figure with two rows: true images and predicted images
+    fig, axes = plt.subplots(2, num_samples, figsize=(20, 4))
+
+    for i in range(num_samples):
+        # Convert x and x_hat to numpy arrays and reshape them
+        x_img = x_samples[i].cpu().numpy().reshape(args.input_dim, args.input_dim)
+        x_hat_img = x_hat_samples[i].cpu().detach().numpy().reshape(args.input_dim, args.input_dim)
+
+        # Rescale the images to the range [0, 255] and convert to uint8
+        x_img = (x_img * 255).clip(0, 255).astype("uint8")
+        x_hat_img = (x_hat_img * 255).clip(0, 255).astype("uint8")
+
+        # Plot the true image in the first row
+        axes[0, i].imshow(x_img, cmap='gray')
+        axes[0, i].axis('off')
+        if i == 0:
+            axes[0, i].set_title("True Images")
+
+        # Plot the predicted image in the second row
+        axes[1, i].imshow(x_hat_img, cmap='gray')
+        axes[1, i].axis('off')
+        if i == 0:
+            axes[1, i].set_title("Predicted Images (x_hat)")
+
+    plt.tight_layout()
+    plot_path = os.path.join(plot_dir, f"plot_epoch_{args.epoch + 1}.png")
+    plt.savefig(plot_path)
+    plt.close()
 
 def sample_images(args, model, batch):
     """
@@ -17,7 +59,7 @@ def sample_images(args, model, batch):
             - "true_treatment": Treatment variables for the batch.
             - "true_size": Size variables for the batch.
     """
-    save_path = os.path.join(args.save_dir, "plots")
+    save_path = os.path.join(args.save_exp, "plots")
     os.makedirs(save_path, exist_ok=True)
 
     # Select 10 samples from the batch (you can change this to random selection if needed)
@@ -61,28 +103,36 @@ def sample_images(args, model, batch):
 
 def save_dynamics(args, model, batch):
     # Get the dynamics information from the model
-    dynamics_info = model.get_ode(
-        batch["true_image"].to(args.device), 
-        batch["true_treatment"].to(args.device), 
-        batch["true_size"].to(args.device)
-    )
-    
+
+    if args.dataset == 'Pendulum':
+        dynamics_info = model.get_ode(batch['x'].to(args.device), batch['dx'].to(args.device), batch['ddx'].to(args.device))
+    elif args.dataset == 'MNIST_UNTREATED' or 'DOT':
+        dynamics_info = model.get_ode(batch['x'].to(args.device), batch['dx'].to(args.device))
+
+    # dynamics_info = model.get_ode(
+    #     batch["true_image"].to(args.device), 
+    #     batch["true_treatment"].to(args.device), 
+    #     batch["true_size"].to(args.device)
+    # )
+
     # Create a directory for saving dynamics information if it doesn't exist
-    ode_dir = os.path.join(args.save_dir, "ode")
+    ode_dir = os.path.join(args.save_exp, "ode")
     os.makedirs(ode_dir, exist_ok=True)
 
     # Define the path for saving the dynamics info
     ode_path = os.path.join(ode_dir, "dynamics_info.txt")
 
-    true_rmse, cf_rmse = compute_metrics(args, model, batch)
+    # if args.dataset == 'MNIST': #TODO
+    #     true_rmse, cf_rmse = compute_metrics(args, model)
 
     # Open the file in append mode to save dynamics info for each epoch
     with open(ode_path, 'a') as f:
         # Write a header with the epoch number
-        f.write(f"Dynamics Information for Iter {args.iter + 1}\n")
+        f.write(f"Dynamics Information for Epoch {args.epoch + 1}\n")
         
         # Write the dynamics values
         f.write("Dynamics:\n")
+
         for term, values in dynamics_info['dynamics'].items():
             f.write(f"{term}: {values}\n")
         
@@ -91,20 +141,21 @@ def save_dynamics(args, model, batch):
         for z_key, ode_eq in dynamics_info["ode_equations"].items():
             f.write(f"{z_key}:\t{ode_eq}\n")
         
-        # Write the RMSE metrics
-        f.write("RMSE Metrics:\n")
-        f.write(f"True RMSE: {true_rmse.item() if isinstance(true_rmse, torch.Tensor) else true_rmse}\n")  # Ensure tensor is converted to scalar
-        f.write(f"Counterfactual RMSE: {cf_rmse.item() if isinstance(cf_rmse, torch.Tensor) else cf_rmse}\n")  # Same here
-        
-        # Add a separator between different epochs for clarity
-        f.write("\n" + "="*50 + "\n")
+        # Write the RMSE metrics TODO
+        # if args.dataset == 'MNIST':
+        #     f.write("RMSE Metrics:\n")
+        #     f.write(f"True RMSE: {true_rmse.item() if isinstance(true_rmse, torch.Tensor) else true_rmse}\n")  # Ensure tensor is converted to scalar
+        #     f.write(f"Counterfactual RMSE: {cf_rmse.item() if isinstance(cf_rmse, torch.Tensor) else cf_rmse}\n")  # Same here
+            
+        #     # Add a separator between different epochs for clarity
+        #     f.write("\n" + "="*50 + "\n")
 
 def predict_attributes(args, model, batch):
     """
     Predict attributes for a batch and save dynamics information to a file.
 
     Args:
-    - args: Arguments/configurations for the model (includes save_dir, device, etc.).
+    - args: Arguments/configurations for the model (includes save_exp, device, etc.).
     - model: The VAE model instance.
     - batch: A dictionary containing input data (e.g., images, treatments).
 
@@ -113,7 +164,7 @@ def predict_attributes(args, model, batch):
     """
  
     # Create a directory for saving dynamics information if it doesn't exist
-    preds_dir = os.path.join(args.save_dir, "preds")
+    preds_dir = os.path.join(args.save_exp, "preds")
     os.makedirs(preds_dir, exist_ok=True)
 
     # Define the path for saving the dynamics info

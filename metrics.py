@@ -1,19 +1,25 @@
 import numpy as np
 import torch
 import os
-import cv2 
 
-def compute_metrics(args, model, batch):
+from vae import VAE
+from autoencoder import Autoencoder
 
-    # # For CF RMSE: TODO for entire dataset
-        # val_file = os.path.join(args.dataset_dir, 'mnist_val_traj.npz')
-        # data = np.load(val_file, allow_pickle=True)
+#AE metrics calculator
+def compute_metrics(args, model):
 
-    true_rmse, cf_rmse = get_rmse(args, batch, model)
+    # For CF RMSE:
+    if args.dataset == 'MNIST':
+        val_file = os.path.join(args.dataset_dir, 'mnist_val_traj.npz')
+    if args.dataset == 'Pendulum':
+        val_file = os.path.join(args.dataset_dir, 'pendulum_val.npz')
+    data = np.load(val_file, allow_pickle=True)
+
+    true_rmse, cf_rmse = get_rmse(args, data, model, args.pred_timepoints, visualize = False)
 
     return true_rmse, cf_rmse
 
-def get_rmse(args, batch, model, visualize = True):
+def get_rmse(args, data, model, timesteps, visualize = True):
     """
     Calculate RMSE for true and counterfactual trajectories.
 
@@ -29,6 +35,8 @@ def get_rmse(args, batch, model, visualize = True):
         - 'cf_sizes': Sizes (potential outcomes) of the counterfactual trajectory [shape: (samples, timepoints/sample)]
     model: object
         Autoencoder + SINDy model with method `predict_next_latents(init_image, treatment, num_steps)`
+    timesteps: int
+        Number of timesteps to predict ahead.
 
     Returns:
     --------
@@ -37,48 +45,96 @@ def get_rmse(args, batch, model, visualize = True):
     cf_rmse: np.ndarray
         RMSE for the counterfactual trajectory at each timestep [shape: (timesteps,)]
     """
-    # Extract relevant data TODO! for entire datset
-        # true_images = torch.tensor(data["true_images"], dtype = torch.float32)
-        # cf_images = torch.tensor(data["cf_images"], dtype = torch.float32)
-        # init_image = true_images[:, 0, :, :]  # Initial image (samples, H, W)
-        # true_treatment = torch.tensor(data["true_treatments"], dtype = torch.float32)
-        # cf_treatment = torch.tensor(data["cf_treatments"], dtype = torch.float32)
-        # true_size = torch.tensor(data['true_sizes'], dtype=torch.float32)
-        # cf_size = torch.tensor(data['cf_sizes'], dtype=torch.float32)
+    # Extract relevant data
+    true_images = torch.tensor(data["true_images"], dtype = torch.float32)
+    cf_images = torch.tensor(data["cf_images"], dtype = torch.float32)
+    init_image = true_images[:, 1, :, :]  # Initial image (samples, H, W)
+    true_treatment = torch.tensor(data["true_treatments"], dtype = torch.float32)
+    cf_treatment = torch.tensor(data["cf_treatments"], dtype = torch.float32)
+    true_size = torch.tensor(data['true_sizes'], dtype=torch.float32)
+    cf_size = torch.tensor(data['cf_sizes'], dtype=torch.float32)
     # Predict latent trajectories for true and counterfactual treatments
-    true_images = torch.tensor(batch["true_image"], dtype=torch.float32)
-    cf_images = torch.tensor(batch["cf_image"], dtype=torch.float32)
-    img_by_traj = true_images.view(args.bs // args.timepoints, args.timepoints, args.input_dim, args.input_dim)
-    init_image = img_by_traj[:, 0, :, :]
-    true_treatment = torch.tensor(batch["true_treatment"], dtype=torch.float32)
-    cf_treatment = torch.tensor(batch["cf_treatment"], dtype=torch.float32)
-    true_size = torch.tensor(batch['true_size'], dtype=torch.float32)
-    cf_size = torch.tensor(batch['cf_size'], dtype=torch.float32)
-
-    # Select the first sample of each trajectory
-    selected_indices = torch.arange(0, args.bs, args.timepoints)
-    # For the treatment and size inputs, select the corresponding values at the initial time step
-    init_true_treatment = true_treatment[selected_indices]
-    init_cf_treatment = cf_treatment[selected_indices]
-    init_true_size = true_size[selected_indices]
-    init_cf_size = cf_size[selected_indices]
-
-    true_z_traj_hat = model.predict_next_latents(init_image.to(next(model.parameters()).device), init_true_treatment.to(next(model.parameters()).device), init_true_size.to(next(model.parameters()).device),  num_steps=args.pred_timepoints, dt = .05)
-    cf_z_traj_hat = model.predict_next_latents(init_image.to(next(model.parameters()).device), init_cf_treatment.to(next(model.parameters()).device), init_true_size.to(next(model.parameters()).device), num_steps=args.pred_timepoints, dt = .05)
+    
+    true_z_traj_hat = model.predict_next_latents(init_image.to(next(model.parameters()).device), true_treatment.unsqueeze(1).to(next(model.parameters()).device), num_steps=timesteps, dt = args.delta_t)
+    cf_z_traj_hat = model.predict_next_latents(init_image.to(next(model.parameters()).device), cf_treatment.unsqueeze(1).to(next(model.parameters()).device), num_steps=timesteps, dt = args.delta_t)
 
     # Extract predicted sizes (first latent dimension) for true and counterfactual
     true_size_hat = true_z_traj_hat[:, :, 0]  # Shape: (samples, timesteps)
     cf_size_hat = cf_z_traj_hat[:, :, 0]      # Shape: (samples, timesteps)
-    
-
-    true_size_del = true_size.view(int(args.bs/args.timepoints), args.timepoints)[:, 1:1 + args.pred_timepoints]
-    cf_size_del = cf_size.view(int(args.bs/args.timepoints), args.timepoints)[:, 1:1 + args.pred_timepoints]
+     
 
     # Compute RMSE for forecasting tau steps ahead
-    true_rmse = torch.sqrt(torch.mean((true_size_del - true_size_hat.cpu()) ** 2, dim=0))  # Shape: (timesteps,)
-    cf_rmse = torch.sqrt(torch.mean((cf_size_del - cf_size_hat.cpu()) ** 2, dim=0))        # Shape: (timesteps,)
+    true_rmse = torch.sqrt(torch.mean((true_size[:, 1: 1 + timesteps] - true_size_hat.cpu()) ** 2, dim=0))  # Shape: (timesteps,)
+    cf_rmse = torch.sqrt(torch.mean((cf_size[:, 1: 1 + timesteps].detach() - cf_size_hat.cpu()) ** 2, dim=0))        # Shape: (timesteps,)
 
     return true_rmse.detach().tolist(), cf_rmse.detach().tolist()
+
+# def compute_metrics(args, model, batch):
+
+#     # # For CF RMSE: TODO for entire dataset
+#         # val_file = os.path.join(args.dataset_dir, 'mnist_val_traj.npz')
+#         # data = np.load(val_file, allow_pickle=True)
+
+#     true_rmse, cf_rmse = get_rmse(args, batch, model)
+
+#     return true_rmse, cf_rmse
+
+# def get_rmse(args, batch, model, visualize=True):
+#     """
+#     Calculate RMSE for true and counterfactual trajectories.
+#     """
+#     # Extract and process data from the batch
+#     true_images = torch.tensor(batch["true_image"], dtype=torch.float32)
+#     cf_images = torch.tensor(batch["cf_image"], dtype=torch.float32)
+#     true_treatment = torch.tensor(batch["true_treatment"], dtype=torch.float32)
+#     cf_treatment = torch.tensor(batch["cf_treatment"], dtype=torch.float32)
+#     true_size = torch.tensor(batch['true_size'], dtype=torch.float32)
+#     cf_size = torch.tensor(batch['cf_size'], dtype=torch.float32)
+
+#     # Reshape images based on the model type
+#     if isinstance(model, VAE):
+#         img_by_traj = true_images.view(args.bs // args.timepoints, args.timepoints, args.input_dim, args.input_dim)
+#         init_image = img_by_traj[:, 0, :, :]
+#     elif isinstance(model, Autoencoder):
+#         img_by_traj = true_images.view(args.bs // args.timepoints, args.timepoints, -1)  # Flatten for AE
+#         init_image = img_by_traj[:, 0, :]
+
+#     # Select the initial values for trajectory prediction
+#     selected_indices = torch.arange(0, args.bs, args.timepoints)
+#     init_true_treatment = true_treatment[selected_indices]
+#     init_cf_treatment = cf_treatment[selected_indices]
+#     init_true_size = true_size[selected_indices]
+#     init_cf_size = cf_size[selected_indices]
+
+#     # Predict latent trajectories for true and counterfactual treatments
+#     device = next(model.parameters()).device
+#     true_z_traj_hat = model.predict_next_latents(
+#         init_image.to(device),
+#         init_true_treatment.to(device),
+#         num_steps=args.pred_timepoints,
+#         dt=0.05
+#     )
+#     cf_z_traj_hat = model.predict_next_latents(
+#         init_image.to(device),
+#         init_cf_treatment.to(device),
+#         num_steps=args.pred_timepoints,
+#         dt=0.05
+#     )
+
+#     # Extract predicted sizes (first latent dimension) for true and counterfactual
+#     true_size_hat = true_z_traj_hat[:, :, 0]  # Shape: (samples, timesteps)
+#     cf_size_hat = cf_z_traj_hat[:, :, 0]      # Shape: (samples, timesteps)
+
+#     # Reshape true and counterfactual sizes for comparison
+#     true_size_del = true_size.view(int(args.bs / args.timepoints), args.timepoints)[:, 1:1 + args.pred_timepoints]
+#     cf_size_del = cf_size.view(int(args.bs / args.timepoints), args.timepoints)[:, 1:1 + args.pred_timepoints]
+
+#     # Compute RMSE for forecasting tau steps ahead
+#     true_rmse = torch.sqrt(torch.mean((true_size_del - true_size_hat.cpu()) ** 2, dim=0))
+#     cf_rmse = torch.sqrt(torch.mean((cf_size_del - cf_size_hat.cpu()) ** 2, dim=0))
+
+#     return true_rmse.detach().tolist(), cf_rmse.detach().tolist()
+
 
 
     # if visualize:

@@ -9,6 +9,121 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
+import torch
+from torch.utils.data import Dataset
+import numpy as np
+
+class PendulumDataset(Dataset):
+    def __init__(self, file_path):
+        """
+        Args:
+            file_path (str): Path to the .npz file containing the dataset.
+        """
+        # Load the data from the .npz file
+        data = np.load(file_path)
+        # Ensure the required keys 'x', 'dx', and optionally 'ddx' exist in the loaded data
+        required_keys = ['x', 'dx', 'ddx', 'z', 'dz']
+        for key in required_keys:
+            if key not in data:
+                raise KeyError(f"Missing required key '{key}' in the dataset file.")
+                
+        self.data = {key: torch.tensor(value, dtype=torch.float32) for key, value in data.items() if key in required_keys}
+
+    def __len__(self):
+        return self.data['x'].shape[0]  # Number of samples in the dataset
+    
+    def __getitem__(self, idx):
+        """
+        Args:
+            idx (int): Index of the sample to retrieve.
+        Returns:
+            dict: A dictionary containing the input data for the given index.
+        """
+        sample = {key: value[idx] for key, value in self.data.items()}
+        return sample
+
+class MNIST_UNTREATED_Dataset(Dataset):
+    def __init__(self, npz_file):
+
+        # Load the dataset from the .npz file
+        data = np.load(npz_file, allow_pickle=True)
+        
+        # Load data and convert to torch.float32
+        self.image_ids = torch.tensor(data['image_ids'], dtype=torch.long)  # Assuming ids are integers
+        self.c = torch.tensor(data['c'], dtype=torch.long)  # Assuming labels are integers
+
+        # Process the image data and derivatives
+        self.x = torch.tensor(data['x'], dtype=torch.float32)  # Exclude first timestep
+        self.dx = torch.tensor(data['dx'], dtype=torch.float32)
+
+        # Process size data (true_size, cf_size) by ensuring size is given for each timepoint of a sample
+        self.o = torch.tensor(data['o'], dtype=torch.float32).flatten()
+
+        # Get number of trajectories and timesteps
+        self.num_trajectories, self.num_timesteps, *_ = self.x.shape
+
+        # Flattening the dataset for per-time-point samples (i.e [samples, timepoints, H, W] -> [samples * timepoints, H, W])
+        self.flattened_data = {
+            "image_id": torch.repeat_interleave(self.image_ids, self.num_timesteps), # [sample * timepoints]
+            "digit": torch.repeat_interleave(self.c, self.num_timesteps), # [sample * timepoints]
+            "time_step": torch.tile(torch.arange(self.num_timesteps), (self.num_trajectories,)), # [sample * timepoints ]
+            "x": self.x.reshape(-1, *self.x.shape[2:]), # [sample * timepoints, H, W ]
+            "dx": self.dx.reshape(-1, *self.dx.shape[2:]), # [sample * timepoints, H, W ]
+            "size": self.o, # [sample * timepoints]
+        }
+
+
+    def __len__(self):
+        """Return total number of samples."""
+        return self.num_trajectories * self.num_timesteps
+
+    def __getitem__(self, idx):
+        """Retrieve the data for a specific flattened index."""
+  
+        return {key: value[idx] if "x" not in key and "dx" not in key 
+                else value[idx].float()  # Ensure all images and derivatives are float32
+                for key, value in self.flattened_data.items()}
+
+
+class Dot_Dataset(Dataset):
+    def __init__(self, npz_file):
+
+        # Load the dataset from the .npz file
+        data = np.load(npz_file, allow_pickle=True)
+        
+        # Load data and convert to torch.float32
+        self.image_ids = torch.tensor(data['image_ids'], dtype=torch.long)  # Assuming ids are integers
+
+        # Process the image data and derivatives
+        self.x = torch.tensor(data['x'], dtype=torch.float32)  # Exclude first timestep
+        self.dx = torch.tensor(data['dx'], dtype=torch.float32)
+
+        # Process size data (true_size, cf_size) by ensuring size is given for each timepoint of a sample
+        self.o = torch.tensor(data['o'], dtype=torch.float32).flatten()
+
+        # Get number of trajectories and timesteps
+        self.num_trajectories, self.num_timesteps, *_ = self.x.shape
+
+        # Flattening the dataset for per-time-point samples (i.e [samples, timepoints, H, W] -> [samples * timepoints, H, W])
+        self.flattened_data = {
+            "time_step": torch.tile(torch.arange(self.num_timesteps), (self.num_trajectories,)), # [sample * timepoints ]
+            "x": self.x.reshape(-1, *self.x.shape[2:]), # [sample * timepoints, H, W ]
+            "dx": self.dx.reshape(-1, *self.dx.shape[2:]), # [sample * timepoints, H, W ]
+            "size": self.o, # [sample * timepoints]
+        }
+
+
+    def __len__(self):
+        """Return total number of samples."""
+        return self.num_trajectories * self.num_timesteps
+
+    def __getitem__(self, idx):
+        """Retrieve the data for a specific flattened index."""
+  
+        return {key: value[idx] if "x" not in key and "dx" not in key 
+                else value[idx].float()  # Ensure all images and derivatives are float32
+                for key, value in self.flattened_data.items()}
+
 class MNIST_TE_Dataset(Dataset):
     def __init__(self, npz_file):
         """
@@ -62,6 +177,7 @@ class MNIST_TE_Dataset(Dataset):
 
     def __getitem__(self, idx):
         """Retrieve the data for a specific flattened index."""
+
         return {key: value[idx] if "image" not in key and "derivative" not in key 
                 else value[idx].float()  # Ensure all images and derivatives are float32
                 for key, value in self.flattened_data.items()}
