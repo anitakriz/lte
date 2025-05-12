@@ -39,7 +39,7 @@ zeros_10.lambda_3 = 0
 # Assume zeros_10 is an object with parameters as specified in your dataset (e.g., zeros_10.delta_t, etc.)
 dot_untreated = type('', (), {})()  # Create an empty object for storing these values
 dot_untreated.start_sindy = 1 
-dot_untreated.delta_t = .1
+dot_untreated.delta_t = .02
 dot_untreated.input_dim = 51
 dot_untreated.latent_dim = 1
 dot_untreated.num_ode = 1
